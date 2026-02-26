@@ -2,13 +2,20 @@
 use actix_web::{get, post, put, delete, web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Mutex;
 
 // Define a struct to format the data and the payloads JSON
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct User {
     id: u32,
     name: String,
     status: String,
+}
+
+// Define temporary App State
+struct AppState {
+    users: Mutex<HashMap<u32, User>>,
 }
 
 // Define the endpoints
@@ -21,55 +28,87 @@ async fn test() -> impl Responder {
 
 // GET endpoint in "/users/*id*" fetch and user by id
 #[get("/users/{id}")]
-async fn fetch_user(path: web::Path<u32>) -> impl Responder {
+async fn fetch_user(
+    state: web::Data<AppState>,
+    path: web::Path<u32>,
+) -> impl Responder {
     // Extract ID from payload
     let user_id = path.into_inner();
 
-    // Create a dummy user for the response
-    let user = User {
-        id: user_id,
-        name: "John Doe".to_string(),
-        status: "Active".to_string(),
-    };
+    // Connect to the current state
+    let users = state.users.lock().unwrap();
 
-    // Respond with the user as JSON
-    HttpResponse::Ok().json(user)
+    // Find user and respond its struct or respond 404 status
+    match users.get(&user_id) {
+        Some(user) => HttpResponse::Ok().json(user),
+        None => HttpResponse::NotFound().finish(),
+    }
 }
 
 // POST endpoint in "/users" to create new entry
 #[post("/users")]
-async fn create_user(user: web::Json<User>) -> impl Responder {
+async fn create_user(
+    state: web::Data<AppState>,
+    user: web::Json<User>,
+) -> impl Responder {
+    // Check the current state
+    let mut users = state.users.lock().unwrap();
+    
     // Uses the User struct to deserialize the payload
     let new_user = user.into_inner();
+
+    // Check for user with same id, insert new if doesnt conflict
+    if users.contains_key(&new_user.id) {
+        return HttpResponse::Conflict().finish(); // 409
+    }
+    users.insert(new_user.id, new_user.clone());
 
     // Respond with the same data and 201 status Created
     HttpResponse::Created().json(new_user)
 }
 
 // PUT endpoint in "/update/id" to fully change the data
-#[put("/update/{id}")]
-async fn update(path: web::Path<u32>) -> impl Responder {
-    // Extract the ID
-    let user_id = path.into_inner();
+#[put("/update")]
+async fn update(
+    state: web::Data<AppState>,
+    user: web::Json<User>,
+) -> impl Responder {
+    // Check current state and get the user
+    let mut users = state.users.lock().unwrap();
+    let updated_user = user.into_inner();
 
-    // Updates the entry
-    println!("{}", user_id);
+    // Check if user exists
+    let existed = users.contains_key(&updated_user.id);
 
-    // Respond with the 200 status OK
-    HttpResponse::Ok().finish()
+    // Makes the change or simply create a new user entry
+    users.insert(updated_user.id, updated_user);
+
+    // Responds with 200 OK if change succesful, or 201 Created if new entry was made 
+    if existed {
+        HttpResponse::Ok().finish()
+    } else {
+        HttpResponse::Created().finish()
+    }
 }
 
 // DELETE endpoint in "/del/id" to delete an user
 #[delete("/del/{id}")]
-async fn delete_user(path: web::Path<u32>) -> impl Responder {
+async fn delete_user(
+    state: web::Data<AppState>,
+    path: web::Path<u32>,
+) -> impl Responder {
+    // Check the current state
+    let mut users = state.users.lock().unwrap();
+
     // Extract the ID
     let user_id = path.into_inner();
 
-    // Deletes the user
-    println!("{}", user_id);
-
-    // Responde with 200 status
-    HttpResponse::Ok().finish()
+    // Checks if the user exists and delete its entry, respond 404 if no user found
+    if users.remove(&user_id).is_some() {
+        HttpResponse::NoContent().finish() // 204
+    } else {
+        HttpResponse::NotFound().finish() // 404
+    }
 }
 
 // The main entry point for the app
@@ -77,10 +116,31 @@ async fn delete_user(path: web::Path<u32>) -> impl Responder {
 async fn main() -> std::io::Result<()> {
     // Print the server is started
     println!("Server running in localhost:8080");
+
+    // Create the HashMap storage
+    let mut users = HashMap::new();
+
+    //Insert dummy user in the hash
+    users.insert(
+        1,
+        User {
+            id: 1,
+            name: "John Doe".to_string(),
+            status: "Active".to_string(),
+        },
+    );
+
+    
+
+    // Initialize the data state
+    let state = web::Data::new(AppState {
+        users: Mutex::new(users),
+    });
     
     // Start the HTTP server
-    HttpServer::new(|| {
+    HttpServer::new(move || {
         App::new()
+            .app_data(state.clone())
             .service(test)
             .service(fetch_user)
             .service(create_user)
@@ -96,9 +156,10 @@ async fn main() -> std::io::Result<()> {
     /* Curl for testing
     curl.exe -X GET http://localhost:8080/
     curl.exe -X GET http://localhost:8080/users/1
-    curl.exe -X PUT http://localhost:8080/update/1
     curl.exe -X DELETE http://localhost:8080/del/1
-
+    
+    // Curl with payload
     curl.exe -X POST "http://localhost:8080/users" -H "Content-Type: application/json" -d "{\"id\": 1, \"name\": \"Test123\", \"status\": \"Active\"}"
+    curl.exe -X PUT "http://localhost:8080/update" -H "Content-Type: application/json" -d "{\"id\":2,\"name\":\"Test123\",\"status\":\"Active\"}"
     */
 }
