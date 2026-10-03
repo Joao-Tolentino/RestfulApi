@@ -1,98 +1,62 @@
-# RestfulApi: High-Performance Lightweight Rust User API
+# RestfulApi
 
-[![Rust](https://img.shields.io/badge/rust-v1.93+-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org)
-[![Actix Web](https://img.shields.io/badge/Actix--Web-v4.13-blue.svg?style=flat-square)](https://actix.rs)
-[![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#)
 
-A highly efficient, robust, and lightweight RESTful API for managing user state, built with **Rust** and the **Actix Web** framework. This application is compiled into a standalone, dependency-free binary file (`launcher.exe`), featuring a custom API-themed application icon, allowing for zero-install deployment on Windows.
-
----
-
-<div align="center">
-
-### **Instant Standalone Download**
-Get the pre-compiled, fully self-contained Windows executable containing all dependencies.
-
-[![Download launcher.exe](https://img.shields.io/badge/Download-launcher.exe-007ACC?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Joao-Tolentino/RestfulApi/releases/latest/download/launcher.exe)
-
-</div>
+A fully functional REST API server built in Rust using the **Actix-Web** framework. It manages an in-memory `User` store protected by a `Mutex<HashMap>` and exposes full CRUD operations across five HTTP endpoints.
 
 ---
 
-## Key Features
+## Features
 
-- **Blazing Fast performance**: Leverages Actix Web, one of the fastest asynchronous web frameworks available.
-- **Self-Contained Executable**: No runtime dependencies, no DLLs, and no external installations required. Just download and run.
-- **In-Memory Thread-Safe Storage**: Implements safe concurrent user state manipulation using Rust's `Mutex` and `HashMap`.
-- **Comprehensive CRUD Operations**: Fully-featured user state management.
-- **Professional Windows Integration**: Embedded system resource information and custom application icon.
+- **Actix-Web Server**: Runs on `localhost:8080` using the `#[actix_web::main]` async runtime macro.
+- **Mutex-Protected State**: Shared `AppState` wraps a `Mutex<HashMap<u32, User>>`, ensuring safe concurrent access across all handler threads.
+- **Full CRUD**: GET, POST, PUT, and DELETE endpoints manage `User { id: u32, name: String, status: String }` structs, serialized/deserialized by `serde_json`.
+- **Conflict & 404 Handling**: `create_user` returns `409 Conflict` if the ID already exists; `delete_user` returns `404 Not Found` if no matching entry is present.
 
-## API Endpoint Reference
+---
 
-The API runs by default on `http://localhost:8080`. Below is the concise list of endpoints:
+## Quick Start
 
-| Method | Endpoint | Description | Request Payload | Response Code |
-| :--- | :--- | :--- | :--- | :--- |
-| **GET** | `/` | Verify API health status | *None* | `200 OK` |
-| **GET** | `/users/{id}` | Retrieve a user profile by ID | *None* | `200 OK` / `404 Not Found` |
-| **POST** | `/users` | Create a new user entry | `User` JSON | `201 Created` / `409 Conflict` |
-| **PUT** | `/update` | Update existing user or create if new | `User` JSON | `200 OK` / `201 Created` |
-| **DELETE** | `/del/{id}` | Delete a user profile by ID | *None* | `204 No Content` / `404 Not Found` |
+1. Clone or download the repository.
+2. Install the Rust toolchain via `rustup`.
+3. Run `cargo run` to launch the server on `localhost:8080`.
 
-### User Schema
+---
 
-All user payload data must conform to the following JSON structure:
+## Configuration Details
 
-```json
-{
-  "id": 1,
-  "name": "John Doe",
-  "status": "Active"
-}
+No external database or configuration file is required. The server pre-seeds the in-memory `HashMap` with a default user (`id: 1, name: "John Doe", status: "Active"`) on startup for immediate testing.
+
+---
+
+## Usage Guidelines
+
+```sh
+# Health check
+curl -X GET http://localhost:8080/
+
+# Fetch a user by ID
+curl -X GET http://localhost:8080/users/1
+
+# Create a new user
+curl -X POST http://localhost:8080/users -H "Content-Type: application/json" -d "{\"id\": 2, \"name\": \"Jane\", \"status\": \"Active\"}"
+
+# Update a user
+curl -X PUT http://localhost:8080/update -H "Content-Type: application/json" -d "{\"id\": 1, \"name\": \"Updated\", \"status\": \"Inactive\"}"
+
+# Delete a user
+curl -X DELETE http://localhost:8080/del/1
 ```
 
 ---
 
-## Quick Start Guide
+## Technical Documentation
 
-### 1. Running the Executable
-Simply download the pre-compiled `launcher.exe` and execute it from your file manager or terminal:
-
-```cmd
-launcher.exe
-```
-
-Upon launching, the console will output:
-```text
-Server running in localhost:8080
-```
-
-### 2. Testing the Endpoints
-You can easily test the REST API endpoints using standard Windows command-line `curl.exe`:
-
-*   **Check API Status:**
-    ```cmd
-    curl.exe -X GET http://localhost:8080/
-    ```
-*   **Get User with ID 1:**
-    ```cmd
-    curl.exe -X GET http://localhost:8080/users/1
-    ```
-*   **Create New User:**
-    ```cmd
-    curl.exe -X POST "http://localhost:8080/users" -H "Content-Type: application/json" -d "{\"id\": 2, \"name\": \"Jane Smith\", \"status\": \"Active\"}"
-    ```
-*   **Update User:**
-    ```cmd
-    curl.exe -X PUT "http://localhost:8080/update" -H "Content-Type: application/json" -d "{\"id\": 2, \"name\": \"Jane Smith\", \"status\": \"Inactive\"}"
-    ```
-*   **Delete User:**
-    ```cmd
-    curl.exe -X DELETE http://localhost:8080/del/2
-    ```
+For developers interested in directory structures, code architecture, or compilation guidelines, please refer to the **[Documentation.md](Documentation.md)** file.
 
 ---
 
-## Additional Technical Details
+## License
 
-For deep technical details about architecture, concurrency management, and building from source, please refer to the [Documentation.md](file:///c:/Users/joaos/Learning%20Project/Rust/RestfulApi/Documentation.md) file.
+This project is licensed under the **GNU Affero General Public License Version 3 (AGPLv3)**. See the LICENSE file for details.

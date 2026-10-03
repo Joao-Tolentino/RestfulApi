@@ -1,150 +1,60 @@
-# Technical Documentation: RestfulApi Server
+# Developer & Technical Documentation
 
-This document outlines the technical architecture, concurrency models, data structures, endpoint specifications, and compilation instructions for the RestfulApi application.
+This document provides a technical guide to the **RestfulApi** application's architecture and execution.
 
 ---
 
 ## System Architecture
 
-The RestfulApi application is a lightweight, high-performance web service built with Rust using the **Actix Web** framework.
+The application is a single-file Actix-Web server using shared mutable state behind a `Mutex`.
 
 ```mermaid
 graph TD
-    Client[HTTP Client] <-->|HTTP Requests/Responses| ActixServer[Actix Web HttpServer]
-    ActixServer <-->|App Data State| AppState[AppState Struct]
-    AppState <-->|Mutex Lock| UserMap[HashMap u32, User]
+    main -->|web::Data::new AppState| State[Mutex HashMap u32 User]
+    main -->|HttpServer::new| Server[localhost:8080]
+    Server -->|GET /| test[200 OK JSON]
+    Server -->|GET /users/id| fetch_user[state.lock + HashMap.get]
+    Server -->|POST /users| create_user[Deserialize User + insert if no conflict]
+    Server -->|PUT /update| update[upsert User]
+    Server -->|DELETE /del/id| delete_user[HashMap.remove or 404]
 ```
-
-### Key Architectural Components
-
-1.  **Asynchronous Runtime**: Actix Web runs on top of the Tokio-based Actix runtime, which provides high-concurrency event-driven network I/O.
-2.  **Shared State (`AppState`)**: Because the web server spawns a pool of worker threads to handle incoming HTTP requests concurrently, the data storage must be shared safely across all threads.
-3.  **Thread Safety (`Mutex`)**: Rust's standard library `std::sync::Mutex` guarantees mutual exclusion, preventing data races when multiple threads attempt to read or modify the user collection.
 
 ---
 
-## Data Structures
+## Directory Structure & File Roles
 
-### 1. The `User` Model
-Represents the core domain entity of the system.
-
-```rust
-#[derive(Serialize, Deserialize, Clone)]
-struct User {
-    id: u32,
-    name: String,
-    status: String,
-}
 ```
-
-*   `id`: A unique 32-bit unsigned identifier.
-*   `name`: A UTF-8 string containing the user's name.
-*   `status`: A status indicator string (e.g. `"Active"`, `"Inactive"`).
-
-### 2. The `AppState` Container
-Wraps the thread-safe database representation.
-
-```rust
-struct AppState {
-    users: Mutex<HashMap<u32, User>>,
-}
+.
+├── src/main.rs         # All route handlers, AppState, and server init
+├── build.rs            # Cargo build script
+├── Cargo.toml          # Dependencies: actix-web, serde, serde_json
+├── README.md           # General overview
+└── Documentation.md    # Technical documentation
 ```
-
-*   `users`: A `HashMap` where the key is the user ID (`u32`) and the value is the `User` struct.
-*   The `HashMap` is wrapped in a `Mutex` to allow safe, mutable access across HTTP worker threads.
 
 ---
 
-## 🔌 API Endpoint Specifications
+## Workflow
 
-All API requests and responses utilize the `application/json` content type.
-
-### 1. Root Probe / Health Check
-Verifies that the server and API are operational.
-
-*   **URL**: `/`
-*   **Method**: `GET`
-*   **Request Payload**: *None*
-*   **Successful Response**:
-    *   **Status**: `200 OK`
-    *   **Body**:
-        ```json
-        {
-          "message": "The Server and API are working!"
-        }
-        ```
-
-### 2. Fetch User by ID
-Retrieve details of a single user by their unique ID.
-
-*   **URL**: `/users/{id}`
-*   **Method**: `GET`
-*   **URL Path Parameters**:
-    *   `id` (integer, required): Unique identifier of the user.
-*   **Successful Response**:
-    *   **Status**: `200 OK`
-    *   **Body**: A `User` JSON object.
-*   **Error Response**:
-    *   **Status**: `404 Not Found` (If no user matches the ID).
-
-### 3. Create User
-Add a new user to the database.
-
-*   **URL**: `/users`
-*   **Method**: `POST`
-*   **Headers**:
-    *   `Content-Type: application/json`
-*   **Request Payload**: A `User` JSON object.
-*   **Successful Response**:
-    *   **Status**: `201 Created`
-    *   **Body**: The created `User` JSON object.
-*   **Error Response**:
-    *   **Status**: `409 Conflict` (If a user with the requested ID already exists).
-
-### 4. Update / Upsert User
-Update details of an existing user or insert the user if they do not exist.
-
-*   **URL**: `/update`
-*   **Method**: `PUT`
-*   **Headers**:
-    *   `Content-Type: application/json`
-*   **Request Payload**: A `User` JSON object.
-*   **Successful Responses**:
-    *   **Status**: `200 OK` (If an existing user entry was successfully updated).
-    *   **Status**: `201 Created` (If a new user entry was successfully created).
-
-### 5. Delete User
-Remove a user entry from the database.
-
-*   **URL**: `/del/{id}`
-*   **Method**: `DELETE`
-*   **URL Path Parameters**:
-    *   `id` (integer, required): Unique identifier of the user to delete.
-*   **Successful Response**:
-    *   **Status**: `204 No Content` (If the user was successfully removed).
-*   **Error Response**:
-    *   **Status**: `404 Not Found` (If the requested user was not found).
+The execution flow of RestfulApi:
+1. **Initialization**: `main` seeds a `HashMap<u32, User>` with a default user. It wraps it in `Mutex::new` inside `AppState`, then passes it to each worker thread via `web::Data::new`.
+2. **Request Handling**: Each handler receives `web::Data<AppState>` and calls `state.users.lock().unwrap()` to safely access the shared map.
+3. **CRUD Logic**:
+   - **POST `/users`**: Checks `users.contains_key` before inserting — returns `409 Conflict` on ID collision, `201 Created` on success.
+   - **PUT `/update`**: Uses `users.insert` unconditionally (upsert). Returns `200 OK` if the key existed, `201 Created` if it was new.
+   - **DELETE `/del/{id}`**: Calls `users.remove`. Returns `204 No Content` on success or `404 Not Found` if absent.
 
 ---
 
-## Building & Packaging on Windows
+## Launcher Compilation Guide
 
-To compile this project locally into a standalone `.exe` containing all dependencies and the custom icon, follow these steps:
+### Compilation or Execution Commands
 
-### Prerequisites
-1.  **Rust Toolchain**: Install via rustup (requires Rust edition 2024 or later).
-2.  **Windows SDK**: Ensure you have Microsoft Visual Studio C++ build tools installed for resource compilation (`rc.exe` linkers).
+```powershell
+# Run the server in development mode
+cargo run
 
-### Compilation Pipeline
-The compilation relies on `Cargo` to resolve dependencies, run `build.rs` to compile system resources (`resources.rc`), and statically link the result.
-
-```cmd
+# Build the optimized release binary
 cargo build --release
+./target/release/restful_api
 ```
-
-The resulting executable will be generated at:
-```text
-target\release\launcher.exe
-```
-
-This executable is fully self-contained, statically linked, and incorporates the `icon.ico` resource directly into the executable binary.
